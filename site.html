@@ -1,0 +1,571 @@
+<!--
+Plataforma Freelancer - Single file (HTML + JS) pronta para GitHub Pages + Firebase
+INSTRUÇÕES RÁPIDAS (apenas 3 passos):
+1) Crie um projeto no Firebase (https://console.firebase.google.com).
+   - Habilite Authentication > Email/Password
+   - Habilite Firestore (modo test para desenvolvimento) e Realtime updates OK
+2) Substitua o objeto `firebaseConfig` abaixo com suas credenciais do projeto Firebase.
+3) Suba este arquivo como index.html no repositório do GitHub e ative GitHub Pages (branch main / docs ou root).
+   - Alternativa: use firebase hosting (opcional).
+
+Este arquivo já usa Firestore real-time (onSnapshot) — várias pessoas vão ver e interagir ao mesmo tempo.
+Para produção, ajuste regras do Firestore e verificação/segurança.
+-->
+
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Freelance Hub — GitHub Pages + Firebase</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;600;800&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#f6f8fb;--card:#ffffff;--muted:#6b7280;--accent:#0b84ff}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:var(--bg);color:#111}
+  .wrap{max-width:1100px;margin:28px auto;padding:16px}
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+  .brand{font-weight:800;font-size:18px;color:var(--accent)}
+  .row{display:flex;gap:12px}
+  .card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 8px 20px rgba(11,132,255,0.04)}
+  .nav{width:240px}
+  .nav button{display:block;width:100%;text-align:left;padding:10px;border-radius:8px;border:0;background:transparent;cursor:pointer;margin-bottom:6px}
+  .nav button.active{background:#f0f8ff;color:var(--accent);font-weight:700}
+  main{display:flex;gap:12px}
+  .content{flex:1}
+  input,select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e6eef6;background:#fff}
+  .btn{padding:10px 12px;border-radius:8px;border:0;cursor:pointer}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:transparent;border:1px solid #e6eef6}
+  .project{display:flex;justify-content:space-between;align-items:center;padding:12px;border-radius:8px;border:1px solid #eef2ff;margin-bottom:8px}
+  .small{font-size:13px;color:var(--muted)}
+  footer{margin-top:18px;text-align:center;color:var(--muted);font-size:13px}
+  @media (max-width:900px){.nav{width:100%}.main-row{flex-direction:column}.row{flex-direction:column}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Freelance Hub (demo)</div>
+    <div id="authArea" class="small"></div>
+  </header>
+
+  <div class="row main-row">
+    <aside class="nav card">
+      <div style="margin-bottom:12px">
+        <div id="userName" style="font-weight:700">Convidado</div>
+        <div class="small" id="userTitle">Não logado</div>
+      </div>
+
+      <button data-route="profile" class="active">Meu Perfil</button>
+      <button data-route="find">Buscar Projetos</button>
+      <button data-route="proposals">Minhas Propostas</button>
+      <button data-route="balance">Meus Ganhos</button>
+      <button data-route="messages">Mensagens</button>
+      <hr style="margin:10px 0;border:none;border-top:1px solid #f1f5f9" />
+      <div class="small" style="margin-bottom:6px">Para contratantes</div>
+      <button data-route="client_post">Publicar Projeto</button>
+      <button data-route="client_proposals">Propostas Recebidas</button>
+      <button data-route="client_myprojects">Meus Projetos</button>
+      <hr style="margin:10px 0;border:none;border-top:1px solid #f1f5f9" />
+      <button data-route="settings">Configurações</button>
+
+      <div style="margin-top:12px">
+        <button id="btnSignUp" class="btn primary" style="width:100%;margin-bottom:6px">Criar conta</button>
+        <button id="btnSignIn" class="btn ghost" style="width:100%">Entrar</button>
+        <button id="btnSignOut" class="btn" style="width:100%;display:none;margin-top:8px">Sair</button>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div id="view" class="card">
+        <!-- Páginas renderizadas por JS -->
+        <div id="page_profile"></div>
+        <div id="page_find" style="display:none"></div>
+        <div id="page_proposals" style="display:none"></div>
+        <div id="page_balance" style="display:none"></div>
+        <div id="page_messages" style="display:none"></div>
+        <div id="page_client_post" style="display:none"></div>
+        <div id="page_client_proposals" style="display:none"></div>
+        <div id="page_client_myprojects" style="display:none"></div>
+        <div id="page_settings" style="display:none"></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="small">Hospede no GitHub Pages. Substitua firebaseConfig e habilite Firestore/Auth.</footer>
+</div>
+
+<!-- Firebase JS SDK (modular) -->
+<script type="module">
+/* ====== CONFIGURE AQUI: substitua pelo seu firebaseConfig ====== */
+const firebaseConfig = {
+  apiKey: "REPLACE_API_KEY",
+  authDomain: "REPLACE_PROJECT.firebaseapp.com",
+  projectId: "REPLACE_PROJECT",
+  storageBucket: "REPLACE_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
+};
+/* ============================================================= */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.23.0/firebase-app.js";
+import {
+  getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword,
+  signOut, onAuthStateChanged, updateProfile
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-auth.js";
+import {
+  getFirestore, collection, addDoc, doc, setDoc, getDoc, getDocs,
+  query, where, onSnapshot, orderBy, serverTimestamp, updateDoc
+} from "https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+/* --- Simple state and helpers --- */
+const routes = document.querySelectorAll('[data-route]');
+const userNameEl = document.getElementById('userName');
+const userTitleEl = document.getElementById('userTitle');
+const authArea = document.getElementById('authArea');
+const btnSignUp = document.getElementById('btnSignUp');
+const btnSignIn = document.getElementById('btnSignIn');
+const btnSignOut = document.getElementById('btnSignOut');
+
+let currentUser = null;
+
+/* --- Navigation --- */
+routes.forEach(btn=>{
+  btn.addEventListener('click', ()=> {
+    routes.forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    showRoute(btn.getAttribute('data-route'));
+  });
+});
+
+function hideAllPages(){ document.querySelectorAll('#view > div').forEach(d=>d.style.display='none'); }
+function showRoute(route){
+  hideAllPages();
+  switch(route){
+    case 'profile': renderProfile(); break;
+    case 'find': renderFind(); break;
+    case 'proposals': renderProposals(); break;
+    case 'balance': renderBalance(); break;
+    case 'messages': renderMessages(); break;
+    case 'client_post': renderClientPost(); break;
+    case 'client_proposals': renderClientProposals(); break;
+    case 'client_myprojects': renderClientMyProjects(); break;
+    case 'settings': renderSettings(); break;
+    default: renderProfile();
+  }
+}
+
+/* --- Auth UI & actions --- */
+btnSignUp.addEventListener('click', ()=> {
+  const email = prompt('Email:')
+  if(!email) return
+  const pass = prompt('Senha (>=6):')
+  if(!pass) return
+  createUserWithEmailAndPassword(auth, email, pass)
+    .then(async cred => {
+      currentUser = cred.user
+      // create user doc profile
+      await setDoc(doc(db, 'users', currentUser.uid), {
+        name: email.split('@')[0],
+        title: 'Sem título',
+        skills: [],
+        createdAt: serverTimestamp()
+      });
+      alert('Conta criada.');
+    })
+    .catch(err => alert('Erro: '+err.message))
+});
+
+btnSignIn.addEventListener('click', ()=> {
+  const email = prompt('Email:')
+  if(!email) return
+  const pass = prompt('Senha:')
+  if(!pass) return
+  signInWithEmailAndPassword(auth, email, pass)
+    .then(()=> alert('Logado'))
+    .catch(err=> alert('Erro: '+err.message))
+});
+
+btnSignOut.addEventListener('click', ()=> {
+  signOut(auth).then(()=> alert('Saiu'));
+});
+
+onAuthStateChanged(auth, async user => {
+  currentUser = user;
+  if(user){
+    userNameEl.innerText = user.displayName || user.email.split('@')[0];
+    userTitleEl.innerText = 'Logado';
+    authArea.innerText = 'Conectado';
+    btnSignOut.style.display = 'block';
+    btnSignIn.style.display = 'none';
+    btnSignUp.style.display = 'none';
+    // ensure profile doc exists
+    const uDoc = await getDoc(doc(db, 'users', user.uid));
+    if(!uDoc.exists()){
+      await setDoc(doc(db,'users',user.uid), { name: user.displayName || user.email.split('@')[0], title:'Sem título', skills: [], createdAt: serverTimestamp() });
+    } else {
+      const ud = uDoc.data();
+      userNameEl.innerText = ud.name || user.displayName || user.email.split('@')[0];
+      userTitleEl.innerText = ud.title || 'Sem título';
+    }
+    // start realtime listeners useful for real-time multi-user
+    startRealtimeListeners();
+  } else {
+    userNameEl.innerText = 'Convidado';
+    userTitleEl.innerText = 'Não logado';
+    authArea.innerText = '';
+    btnSignOut.style.display = 'none';
+    btnSignIn.style.display = 'inline-block';
+    btnSignUp.style.display = 'inline-block';
+    stopRealtimeListeners();
+  }
+});
+
+/* --- Realtime listeners container --- */
+let unsubscribeProjects = null;
+let unsubscribeMessages = null;
+
+/* --- Realtime: listen projects to show live updates for everyone --- */
+function startRealtimeListeners(){
+  // projects
+  const q = query(collection(db, 'projects'), orderBy('createdAt', 'desc'));
+  unsubscribeProjects = onSnapshot(q, snap=>{
+    // re-render projects list only if route is find
+    if(document.querySelector('[data-route].active')?.getAttribute('data-route') === 'find') renderFind();
+    // for client_myprojects and client_proposals, re-render too
+    if(document.querySelector('[data-route].active')?.getAttribute('data-route')?.startsWith('client')) {
+      showRoute(document.querySelector('[data-route].active').getAttribute('data-route'))
+    }
+  });
+  // messages realtime (simple global listener for demo)
+  const mq = query(collection(db, 'messages'), orderBy('createdAt', 'asc'));
+  unsubscribeMessages = onSnapshot(mq, snap=>{
+    if(document.querySelector('[data-route].active')?.getAttribute('data-route') === 'messages') renderMessages();
+  });
+}
+function stopRealtimeListeners(){
+  if(unsubscribeProjects) unsubscribeProjects(); unsubscribeProjects = null;
+  if(unsubscribeMessages) unsubscribeMessages(); unsubscribeMessages = null;
+}
+
+/* ================= Pages ================= */
+
+/* ---------- PROFILE ---------- */
+async function renderProfile(){
+  hideAllPages();
+  const el = document.getElementById('page_profile');
+  el.style.display = 'block';
+  el.innerHTML = '<div class="small">Carregando...</div>';
+  if(!currentUser){ el.innerHTML = `<h2>Perfil</h2><div class="small">Crie uma conta ou entre para editar seu perfil público.</div>`; return; }
+  const uref = doc(db, 'users', currentUser.uid);
+  const ud = (await getDoc(uref)).data();
+  el.innerHTML = `
+    <h2>Meu Perfil</h2>
+    <div style="display:flex;gap:12px;margin-top:10px">
+      <div style="width:120px;height:120px;border-radius:10px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-weight:700">${(ud.name||'U').slice(0,1)}</div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between">
+          <div>
+            <div style="font-weight:700;font-size:18px">${ud.name || 'Sem nome'}</div>
+            <div class="small">${ud.title || 'Sem título'}</div>
+          </div>
+          <div>
+            <button id="btnEditProfile" class="btn ghost">Editar</button>
+          </div>
+        </div>
+        <p class="small" style="margin-top:8px">${ud.bio || 'Sem descrição'}</p>
+        <div style="margin-top:10px">
+          <div class="small">Habilidades</div>
+          <div id="skillList" style="margin-top:8px">${(ud.skills||[]).map(s=>`<span class="small" style="background:#f1f5f9;padding:6px;border-radius:6px;margin-right:6px">${s}</span>`).join(' ')}</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('btnEditProfile').addEventListener('click', async ()=>{
+    const name = prompt('Nome', ud.name||'') || ud.name
+    const title = prompt('Título', ud.title||'') || ud.title
+    const bio = prompt('Descrição', ud.bio||'') || ud.bio
+    const skills = prompt('Habilidades (separe por vírgula)', (ud.skills||[]).join(',')) || (ud.skills||[]).join(',')
+    await updateDoc(uref, { name, title, bio, skills: skills.split(',').map(s=>s.trim()).filter(Boolean) })
+    alert('Perfil atualizado')
+    renderProfile()
+  })
+}
+
+/* ---------- FIND PROJECTS (public) ---------- */
+async function renderFind(){
+  hideAllPages();
+  const el = document.getElementById('page_find'); el.style.display = 'block';
+  el.innerHTML = `
+    <h2>Buscar Projetos</h2>
+    <div style="display:flex;gap:8px;margin-top:10px;margin-bottom:12px">
+      <input id="qText" placeholder="Procurar por título ou skill" />
+      <select id="qCat"><option>Todos</option><option>Design</option><option>Programação</option><option>Redação</option></select>
+      <select id="qLevel"><option>Todos</option><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select>
+      <button id="btnRefresh" class="btn ghost">Refresh</button>
+    </div>
+    <div id="projectsContainer" class="small">Carregando projetos...</div>
+  `;
+  document.getElementById('btnRefresh').addEventListener('click', ()=>renderFind());
+  const qText = document.getElementById('qText'), qCat = document.getElementById('qCat'), qLevel = document.getElementById('qLevel');
+  // fetch projects
+  const snap = await getDocs(query(collection(db, 'projects'), orderBy('createdAt', 'desc')));
+  const list = [];
+  snap.forEach(docu => { list.push({ id: docu.id, ...docu.data() }) });
+  const container = document.getElementById('projectsContainer');
+  function filterAndRender(){
+    const q = qText.value.trim().toLowerCase();
+    const cat = qCat.value, lvl = qLevel.value;
+    const filtered = list.filter(p=>{
+      if(cat!=='Todos' && p.category !== cat) return false;
+      if(lvl!=='Todos' && p.level !== lvl) return false;
+      if(q && !(p.title.toLowerCase().includes(q) || (p.skills||[]).join(' ').toLowerCase().includes(q))) return false;
+      return true;
+    });
+    if(filtered.length===0) { container.innerHTML = '<div class="small">Nenhum projeto encontrado.</div>'; return; }
+    container.innerHTML = '';
+    filtered.forEach(p=>{
+      const d = document.createElement('div'); d.className='project';
+      d.innerHTML = `
+        <div>
+          <div style="font-weight:700">${p.title}</div>
+          <div class="small">${p.category || ''} • ${p.level || ''} • ${p.budget || ''}</div>
+          <div class="small" style="margin-top:6px">${p.description || ''}</div>
+          <div class="small" style="margin-top:6px">Skills: ${(p.skills||[]).join(', ')}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end">
+          <button class="btn primary" data-send="${p.id}">Enviar proposta</button>
+          <button class="btn ghost" style="margin-top:6px" data-view="${p.id}">Ver</button>
+        </div>
+      `;
+      container.appendChild(d);
+    });
+  }
+  filterAndRender();
+  qText.addEventListener('input', filterAndRender);
+  qCat.addEventListener('change', filterAndRender);
+  qLevel.addEventListener('change', filterAndRender);
+  container.addEventListener('click', (ev)=>{
+    const sendId = ev.target.getAttribute('data-send');
+    const viewId = ev.target.getAttribute('data-view');
+    if(sendId) openSendProposal(sendId);
+    if(viewId) alert('Detalhes: ' + JSON.stringify(list.find(x=>x.id===viewId)));
+  });
+}
+
+/* ---------- SEND PROPOSAL (modal-like) ---------- */
+async function openSendProposal(projectId){
+  const projectRef = doc(db, 'projects', projectId);
+  const pSnap = await getDoc(projectRef);
+  if(!pSnap.exists()){ alert('Projeto não encontrado'); return; }
+  const p = pSnap.data();
+  if(!currentUser){ alert('Faça login para enviar proposta'); return; }
+  const message = prompt('Mensagem para o cliente', 'Olá, tenho experiência para este projeto.');
+  if(message === null) return;
+  const value = Number(prompt('Valor ofertado (R$)', p.budget && p.budget.split('-') ? p.budget.split('-')[0] : '1000') || 0);
+  await addDoc(collection(db, 'proposals'), {
+    projectId, projectTitle: p.title || '', freelancerId: currentUser.uid,
+    freelancerName: currentUser.displayName || currentUser.email, message, value,
+    status: 'Enviada', createdAt: serverTimestamp()
+  });
+  alert('Proposta enviada.');
+}
+
+/* ---------- PROPOSALS (meu lado freelancer) ---------- */
+async function renderProposals(){
+  hideAllPages();
+  const el = document.getElementById('page_proposals'); el.style.display = 'block';
+  if(!currentUser){ el.innerHTML = '<div class="small">Faça login para ver suas propostas.</div>'; return; }
+  el.innerHTML = '<h2>Minhas Propostas</h2><div id="myProps" class="small">Carregando...</div>';
+  const q = query(collection(db, 'proposals'), where('freelancerId','==', currentUser.uid), orderBy('createdAt','desc'));
+  const snap = await getDocs(q);
+  const arr = [];
+  snap.forEach(d=> arr.push({ id:d.id, ...d.data() }));
+  const container = document.getElementById('myProps'); container.innerHTML = '';
+  if(arr.length===0){ container.innerHTML = '<div class="small">Nenhuma proposta enviada ainda.</div>'; return; }
+  arr.forEach(p=>{
+    const d = document.createElement('div'); d.className='project';
+    d.innerHTML = `<div><div style="font-weight:700">${p.projectTitle}</div><div class="small">${p.message}</div></div><div class="small">${p.status} • R$ ${p.value}</div>`;
+    container.appendChild(d);
+  });
+}
+
+/* ---------- BALANCE (simples, baseado em docs transactions) ---------- */
+async function renderBalance(){
+  hideAllPages();
+  const el = document.getElementById('page_balance'); el.style.display = 'block';
+  if(!currentUser){ el.innerHTML = '<div class="small">Faça login para ver seu saldo.</div>'; return; }
+  el.innerHTML = '<h2>Meus Ganhos</h2><div id="balArea" class="small">Carregando...</div>';
+  // For demo: transactions collection with field toUserId and amount
+  const snap = await getDocs(query(collection(db, 'transactions'), where('toUserId','==', currentUser.uid)));
+  let available = 0;
+  const hist = [];
+  snap.forEach(docu => { const d = docu.data(); hist.push(d); if(!d.released) available += (d.amount||0); });
+  const container = document.getElementById('balArea');
+  container.innerHTML = `<div style="display:flex;gap:12px;margin-top:8px"><div style="padding:12px;background:#f8fafc;border-radius:8px;flex:1"><div class="small">Disponível</div><div style="font-weight:700">R$ ${available}</div></div></div>
+  <div style="margin-top:10px"><h4>Histórico</h4>${hist.length? hist.map(h=>`<div class="small">${h.date||'-'} — R$ ${h.amount}</div>`).join('') : '<div class="small">Nenhuma transação</div>'}</div>`;
+}
+
+/* ---------- MESSAGES (simples chat entre usuários) ---------- */
+async function renderMessages(){
+  hideAllPages();
+  const el = document.getElementById('page_messages'); el.style.display = 'block';
+  el.innerHTML = `<h2>Mensagens</h2>
+  <div style="display:flex;gap:12px;margin-top:8px">
+    <div style="width:220px">
+      <div id="convList" style="border:1px solid #eef2ff;padding:8px;border-radius:8px;max-height:320px;overflow:auto"></div>
+    </div>
+    <div style="flex:1">
+      <div id="convView" style="border:1px solid #eef2ff;padding:8px;border-radius:8px;height:320px;overflow:auto;background:#fff"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <input id="msgText" placeholder="Escreva uma mensagem" />
+        <button id="sendMsg" class="btn primary">Enviar</button>
+      </div>
+    </div>
+  </div>`;
+  const convList = document.getElementById('convList'), convView = document.getElementById('convView');
+  // For demo, conversations are threads in 'conversations' collection with participants array
+  const convSnap = await getDocs(query(collection(db, 'conversations')));
+  const convs = [];
+  convSnap.forEach(d=> convs.push({ id: d.id, ...d.data() }));
+  convList.innerHTML = convs.map(c=>`<div style="padding:8px;border-radius:6px;cursor:pointer" data-id="${c.id}"><strong>${(c.title||'Conversação')}</strong><div class="small">${(c.lastMsg||'')}</div></div>`).join('');
+  let activeConv = convs[0]?.id || null;
+  if(activeConv) loadConversation(activeConv);
+  convList.querySelectorAll('[data-id]').forEach(elm=>{
+    elm.addEventListener('click', ()=>{ activeConv = elm.getAttribute('data-id'); loadConversation(activeConv) });
+  });
+  document.getElementById('sendMsg').addEventListener('click', async ()=>{
+    if(!currentUser){ alert('Faça login para enviar mensagem'); return; }
+    const text = document.getElementById('msgText').value.trim(); if(!text) return;
+    if(!activeConv){
+      // create new conversation
+      const cdoc = await addDoc(collection(db,'conversations'), { title: 'Conversa ('+Date.now()+')', participants: [currentUser.uid], createdAt: serverTimestamp(), lastMsg: text });
+      activeConv = cdoc.id;
+    }
+    await addDoc(collection(db, 'messages'), { conversationId: activeConv, senderId: currentUser.uid, text, createdAt: serverTimestamp() });
+    // update conversation lastMsg
+    const convRef = doc(db, 'conversations', activeConv);
+    await updateDoc(convRef, { lastMsg: text, updatedAt: serverTimestamp() });
+    document.getElementById('msgText').value = '';
+    loadConversation(activeConv);
+  });
+
+  async function loadConversation(convId){
+    convView.innerHTML = 'Carregando...';
+    const msgsSnap = await getDocs(query(collection(db, 'messages'), where('conversationId','==', convId), orderBy('createdAt','asc')));
+    convView.innerHTML = msgsSnap.docs.map(d=>{
+      const m = d.data();
+      const who = m.senderId === (currentUser && currentUser.uid) ? 'Eu' : (m.senderId || 'Usuário');
+      return `<div style="margin-bottom:8px"><div style="font-size:13px;font-weight:600">${who}</div><div class="small">${m.text}</div></div>`
+    }).join('');
+  }
+}
+
+/* ---------- CLIENT: Publish Project ---------- */
+async function renderClientPost(){
+  hideAllPages();
+  const el = document.getElementById('page_client_post'); el.style.display = 'block';
+  el.innerHTML = `
+    <h2>Publicar Projeto</h2>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <input id="pTitle" placeholder="Título" />
+      <select id="pCategory"><option>Design</option><option>Programação</option><option>Redação</option></select>
+      <select id="pLevel"><option>Iniciante</option><option>Intermediário</option><option>Avançado</option></select>
+    </div>
+    <textarea id="pDesc" placeholder="Descrição" style="margin-top:8px"></textarea>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input id="pBudget" placeholder="Orçamento (ex: 500-1500)" />
+      <button id="postProject" class="btn primary">Publicar</button>
+    </div>
+  `;
+  document.getElementById('postProject').addEventListener('click', async ()=>{
+    if(!currentUser){ alert('Faça login para publicar'); return; }
+    const title = document.getElementById('pTitle').value.trim();
+    const desc = document.getElementById('pDesc').value.trim();
+    const category = document.getElementById('pCategory').value;
+    const level = document.getElementById('pLevel').value;
+    const budget = document.getElementById('pBudget').value.trim() || '—';
+    if(!title || !desc){ alert('Preencha título e descrição'); return; }
+    await addDoc(collection(db, 'projects'), {
+      title, description: desc, category, level, budget, ownerId: currentUser.uid, createdAt: serverTimestamp(), skills: []
+    });
+    alert('Projeto publicado');
+    showRoute('client_myprojects');
+  });
+}
+
+/* ---------- CLIENT: Proposals received (for projects of current client) ---------- */
+async function renderClientProposals(){
+  hideAllPages();
+  const el = document.getElementById('page_client_proposals'); el.style.display = 'block';
+  if(!currentUser){ el.innerHTML = '<div class="small">Faça login para ver propostas.</div>'; return; }
+  el.innerHTML = '<h2>Propostas Recebidas</h2><div id="clientProps" class="small">Carregando...</div>';
+  // find projects owned by current user
+  const pSnap = await getDocs(query(collection(db, 'projects'), where('ownerId','==', currentUser.uid)));
+  const myProjectIds = pSnap.docs.map(d=>d.id);
+  if(myProjectIds.length === 0){ document.getElementById('clientProps').innerHTML = '<div class="small">Você não publicou projetos.</div>'; return; }
+  const proposalsSnap = await getDocs(query(collection(db, 'proposals')));
+  const arr = [];
+  proposalsSnap.forEach(d=> {
+    const pd = d.data();
+    if(myProjectIds.includes(pd.projectId)) arr.push({ id:d.id, ...pd });
+  });
+  const container = document.getElementById('clientProps'); container.innerHTML = '';
+  if(arr.length===0) container.innerHTML = '<div class="small">Nenhuma proposta recebida ainda.</div>';
+  arr.forEach(p=>{
+    const row = document.createElement('div'); row.className='project';
+    row.innerHTML = `<div><div style="font-weight:700">${p.freelancerName} — ${p.projectTitle}</div><div class="small">${p.message}</div></div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end"><div class="small">R$ ${p.value}</div>
+      <div style="margin-top:8px"><button class="btn ghost" data-accept="${p.id}">Aceitar</button> <button class="btn" data-reject="${p.id}">Rejeitar</button></div></div>`;
+    container.appendChild(row);
+  });
+  container.addEventListener('click', async (ev)=>{
+    const acc = ev.target.getAttribute('data-accept');
+    const rej = ev.target.getAttribute('data-reject');
+    if(acc){ await updateDoc(doc(db,'proposals',acc), { status: 'Aceita' }); alert('Proposta aceita'); renderClientProposals(); }
+    if(rej){ await updateDoc(doc(db,'proposals',rej), { status: 'Recusada' }); alert('Proposta recusada'); renderClientProposals(); }
+  });
+}
+
+/* ---------- CLIENT: My Projects ---------- */
+async function renderClientMyProjects(){
+  hideAllPages();
+  const el = document.getElementById('page_client_myprojects'); el.style.display = 'block';
+  if(!currentUser){ el.innerHTML = '<div class="small">Faça login para ver seus projetos.</div>'; return; }
+  el.innerHTML = '<h2>Meus Projetos</h2><div id="myProjList" class="small">Carregando...</div>';
+  const snap = await getDocs(query(collection(db, 'projects'), where('ownerId','==', currentUser.uid), orderBy('createdAt','desc')));
+  const arr = snToArr(snap);
+  const container = document.getElementById('myProjList'); container.innerHTML = '';
+  if(arr.length === 0) container.innerHTML = '<div class="small">Nenhum projeto publicado.</div>';
+  arr.forEach(p=>{
+    const d = document.createElement('div'); d.className='project';
+    d.innerHTML = `<div><div style="font-weight:700">${p.title}</div><div class="small">${p.description}</div></div><div class="small">Propostas: N/A</div>`;
+    container.appendChild(d);
+  });
+}
+
+/* ---------- SETTINGS ---------- */
+function renderSettings(){
+  hideAllPages();
+  const el = document.getElementById('page_settings'); el.style.display = 'block';
+  el.innerHTML = `<h2>Configurações & Verificações</h2>
+    <div style="display:flex;gap:12px;margin-top:8px">
+      <div style="flex:1" class="card"><h4>Conta</h4><div class="small">Gerencie e-mail e senha (use Firebase Console para reset demo).</div></div>
+      <div style="flex:1" class="card"><h4>Verificação</h4><div class="small">Envie documentos (não implementado no demo).</div></div>
+    </div>`;
+}
+
+/* ---------- Util ---------- */
+function snToArr(snap){ const a=[]; snap.forEach(d => a.push({ id:d.id, ...d.data() })); return a; }
+
+/* Start on profile */
+showRoute('profile');
+
+</script>
+</body>
+</html>
